@@ -15,7 +15,7 @@ highwayResidentialWidth = 1.2 #real size, mm
 waterDeep = 0.2 #real size, mm 
 
 
-def coords(lon, lat):
+def coordsOld(lon, lat):
 	lon = lon/180.0*math.pi
 	lat = lat/180.0*math.pi
 	R = 6378137.0
@@ -24,8 +24,21 @@ def coords(lon, lat):
 	
 	return x, y
 
+def coords(lon1, lat1, lon2, lat2):
+	R = 6378137.0
+	
+	dLat = (lat2 - lat1) * math.pi / 180;
+	dLon = (lon2 - lon1) * math.pi / 180;
+	
+	de = dLon * (R*math.cos(math.pi*lat2/180))
+	dn = R * dLat
+ 
+	return de * zoom, dn * zoom
+
 def main():
-	f = open('map2.osm', 'r')
+	name = 'map2'
+	
+	f = open('%s.osm' % name, 'r')
 	xml = f.read()
 	f.close()
 
@@ -33,13 +46,37 @@ def main():
 	osm = osm['osm']
 
 	nodes = {}
+	
 	first = True
 	for node in osm['node']:
 		id = int(node['@id'])
 		lon = float(node['@lon'])
 		lat = float(node['@lat'])
 		
-		x, y = coords(lon, lat)
+		if first:
+			minLon = maxLon = lon
+			minLat = maxLat = lat
+			first = False
+		else:
+			if lon < minLon:
+				minLon = lon
+			if lon > maxLon:
+				maxLon = lon
+			if lat < minLat:
+				minLat = lat
+			if lat > maxLat:
+				maxLat = lat
+
+	baseLon = (maxLon - minLon) / 2 + minLon
+	baseLat = (maxLat - minLat) / 2 + minLat
+	
+	first = True
+	for node in osm['node']:
+		id = int(node['@id'])
+		lon = float(node['@lon'])
+		lat = float(node['@lat'])
+		
+		x, y = coords(baseLon, baseLat, lon, lat)
 		
 		if first:
 			minX = maxX = x
@@ -110,11 +147,23 @@ def main():
 		col = [0.3, 0.3, 0.3, 1]
 		height = 0.1 * zoom
 		
-		if 'building' in tags:
-			height = int(tags.get('building:levels', 1)) * buildingFloorHeight + buildingBase
+		if 'building' in tags or 'building:part' in tags:
+			if 'height' in tags:
+				height = float(tags['height'])
+			else:
+				height = int(tags.get('building:levels', 1)) * buildingFloorHeight + buildingBase
+
+			if 'min_height' in tags:
+				minHeight = float(tags['min_height'])
+				height -= minHeight
+			else:
+				minHeight = 0
+				
 			col = [0.7, 1, 0.7, 1]
 			
 			building = color(col)(linear_extrude(height = height * zoom) (polygon(points)))
+			if minHeight != 0:
+				building <<= [0, 0, minHeight*zoom]
 			
 			res += building
 			
@@ -144,7 +193,7 @@ def main():
 	
 	dx = (maxX - minX) / 2
 	dy = (maxY - minY) / 2
-	if True:
+	if False:
 		cut = cube([200, 200, 100]) << [-100, -100, -10]
 		res -= cut << [-100 - dx, 0, 0]
 		res -= cut << [0, -100 - dy, 0]
@@ -152,6 +201,6 @@ def main():
 		res -= cut << [0, 100 + dy, 0]
 	print dx/2, dy/2
 	
-	res.save('map.scad')
+	res.save('%s.scad' % name)
 
 main()	
